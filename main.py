@@ -4,23 +4,24 @@ import socket
 import requests
 from urllib.parse import urlparse
 
-IMMICH_KEY = os.environ.get('IMMICHKEY')
-BASE_URL = os.environ.get('BASEURL')
-EXT_URL = os.environ.get('EXTERNALURL')
-FILE_PATH = os.environ.get('FILEPATH')
+IMMICH_KEY = os.environ.get('IMMICH_KEY')
+IMMICH_INTERNAL_URL = os.environ.get('IMMICH_INTERNAL_URL')
+IMMICH_EXTERNAL_URL = os.environ.get('IMMICH_URL') or IMMICH_INTERNAL_URL
+CACHE_PATH = os.environ.get('CACHE_PATH')
 ALBUMS = ast.literal_eval(os.environ['ALBUMS'])
-NTFY_URL = os.environ.get('NTFYURL')
-NTFY_ICON = os.environ.get('NTFYICON')
-EMAIL = os.getenv('EMAIL') or ''
-TAG = os.getenv('EMAILTAG') or ''
-DEBUG = (os.getenv('DEBUG', 'False') == 'True')
+DEBUG = (os.getenv('DEBUG', '0') == '1')
+MQTT_BROKER = os.environ.get('MQTT_BROKER')
+MQTT_PORT = os.environ.get('MQTT_PORT')
+MQTT_USERNAME = os.environ.get('MQTT_USERNAME')
+MQTT_PASSWORD = os.environ.get('MQTT_PASSWORD')
+MQTT_TOPIC = os.environ.get('MQTT_TOPIC') or 'immich'
 
-
-if 'AUTHORIZATION_KEY' in os.environ:
-    AUTHORIZATION_KEY = os.environ.get('AUTHORIZATION_KEY')
-else:
-    AUTHORIZATION_KEY = ''
-
+if IMMICH_KEY is None:
+    raise Exception('IMMICH_KEY environment variable not set')
+if IMMICH_INTERNAL_URL is None:
+    raise Exception('IMMICH_INTERNAL_URL environment variable not set')
+if MQTT_BROKER is None:
+    raise Exception('MQTT_BROKER environment variable not set')
 
 def check(host, port, timeout=1):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -38,7 +39,7 @@ def save_data(file_path, dictionary):
     try:
         with open(file_path, 'w') as file:
             for key in dictionary:
-                file.write(str(dictionary[key]['total items']) + '\n')
+                file.write(str(dictionary[key]['total_items']) + '\n')
         if DEBUG:
             print("Data stored successfully!")
     except IOError as error:
@@ -59,7 +60,7 @@ def read_data(file_path):
 
 
 def get_album_contents(uuid, imkey):
-    url = BASE_URL + "/api/album/" + uuid
+    url = IMMICH_INTERNAL_URL + "/api/album/" + uuid
 
     payload = {}
     headers = {
@@ -120,65 +121,64 @@ if __name__ == '__main__':
     total_items_stored = []
     albums = {}
 
-    url = urlparse(BASE_URL)
+    url = urlparse(IMMICH_INTERNAL_URL)
 
     if check(url.hostname, url.port):
-        if os.path.exists(FILE_PATH):
+        if os.path.exists(CACHE_PATH):
             if DEBUG:
-                print('File Exists')
-            total_items_stored = read_data(FILE_PATH)
+                print('Cache file exists')
+            total_items_stored = read_data(CACHE_PATH)
             if DEBUG:
                 for item in total_items_stored:
                     print('Items:', item)
 
-            index = 0
+            i = 0
             for key in ALBUMS:
-                album = key
                 topic = ALBUMS[key]
                 if DEBUG:
                     print("Topic: ", topic)
-                    print("Album ID: ", album)
-                tmp_title, tmp_total = get_album_contents(album, IMMICH_KEY)
-                if index < len(total_items_stored):
-                    albums[album] = {'topic': topic, 'title': tmp_title, 'total items': tmp_total,
-                                     'stored items': total_items_stored[index]}
+                    print("Album ID: ", key)
+                tmp_title, tmp_total = get_album_contents(key, IMMICH_KEY)
+                if i < len(total_items_stored):
+                    albums[key] = {'topic': topic, 'title': tmp_title, 'total_items': tmp_total,
+                                     'stored_items': total_items_stored[i]}
                 else:
-                    albums[album] = {'topic': topic, 'title': tmp_title, 'total items': tmp_total,
-                                     'stored items': tmp_total}
-                index += 1
+                    albums[key] = {'topic': topic, 'title': tmp_title, 'total_items': tmp_total,
+                                     'stored_items': tmp_total}
+                i += 1
 
             if DEBUG:
-                for album in albums:
-                    print('Album Name: ', albums[album]['title'])
-                    print('Total Items Stored: ', albums[album]['stored items'])
-                    print('Total Items Now: ', albums[album]['total items'])
+                for key in albums:
+                    print('Album Name: ', albums[key]['title'])
+                    print('Total Items Stored: ', albums[key]['stored_items'])
+                    print('Total Items Now: ', albums[key]['total_items'])
 
-            index = 0
-            for album in albums:
-                albums[album]['new items'] = albums[album]['total items'] - albums[album]['stored items']
-                index += 1
+            i = 0
+            for key in albums:
+                albums[key]['new_items'] = albums[key]['total_items'] - albums[key]['stored_items']
+                i += 1
 
             if DEBUG:
-                for album in albums:
-                    print('Album Name:', albums[album]['title'])
-                    print("Items Added:", albums[album]['new items'])
+                for key in albums:
+                    print('Album Name:', albums[key]['title'])
+                    print("Items Added:", albums[key]['new_items'])
 
-            for album in albums:
-                if albums[album]['new items'] > 0:
-                    topic = albums[album]['topic']
+            for key in albums:
+                if albums[key]['new_items'] > 0:
+                    topic = albums[key]['topic']
                     url = NTFY_URL + '/' + topic
                     title = 'Immich'
-                    link = EXT_URL + '/albums/' + album
+                    link = IMMICH_EXTERNAL_URL + '/albums/' + key
 
-                    if albums[album]['new items'] > 1:
-                        message = str(albums[album]['new items']) + ' photos added to ' + albums[album]['title'] + '!'
+                    if albums[key]['new_items'] > 1:
+                        message = str(albums[key]['new_items']) + ' photos added to ' + albums[key]['title'] + '!'
                     else:
-                        message = 'Photo added to ' + albums[album]['title'] + '!'
+                        message = 'Photo added to ' + albums[key]['title'] + '!'
 
                     ntfy_notification(url, title, message, link, AUTHORIZATION_KEY)
 
                     if EMAIL != '':
-                        topic = albums[album]['topic'] + '_email'
+                        topic = albums[key]['topic'] + '_email'
                         url = NTFY_URL + '/' + topic
                         message = 'Immich - ' + message + ' ' + link
 
@@ -186,14 +186,14 @@ if __name__ == '__main__':
 
         else:
             for key in ALBUMS:
-                album = key
+                key = key
                 topic = ALBUMS[key]
-                tmp_title, tmp_total = get_album_contents(album, IMMICH_KEY)
-                albums[album] = {'topic': topic, 'title': tmp_title, 'total items': tmp_total}
+                tmp_title, tmp_total = get_album_contents(key, IMMICH_KEY)
+                albums[key] = {'topic': topic, 'title': tmp_title, 'total_items': tmp_total}
 
             if DEBUG:
-                for album in albums:
-                    print('Album Name:', albums[album]['title'])
-                    print('Total Items Now: ', albums[album]['total items'])
+                for key in albums:
+                    print('Album Name:', albums[key]['title'])
+                    print('Total Items Now: ', albums[key]['total_items'])
 
-        save_data(FILE_PATH, albums)
+        save_data(CACHE_PATH, albums)

@@ -1,1 +1,4 @@
 /data.txt
+/.vscode
+/venv
+test.py
