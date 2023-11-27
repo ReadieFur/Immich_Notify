@@ -1,5 +1,5 @@
 #!/bin/bash
-git clone https://github.com/ReadieFur/Immich_Notify.git
+git clone https://github.com/ReadieFur/Immich_Notify.git immich_notify
 cd immich_notify
 python3 -m venv venv
 source venv/bin/activate
