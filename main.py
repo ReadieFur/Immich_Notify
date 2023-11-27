@@ -14,6 +14,10 @@ IMMICH_KEY = os.environ.get('IMMICH_KEY')
 IMMICH_URL = os.environ.get('IMMICH_URL')
 ALBUMS = ast.literal_eval(os.environ.get('ALBUMS')) if os.environ.get('ALBUMS') is not None else None
 CACHE_FILE = "./cache.json"
+DEBUG = os.environ.get('DEBUG') is not None
+
+if DEBUG:
+    import test
 
 def album_api(album_id: str = ''):
     return requests.request("GET", f"{IMMICH_URL}/api/album/{album_id}", headers={
@@ -42,7 +46,10 @@ if __name__ == '__main__':
         if len(new_assets) == 0: #This can occur if items are removed.
             continue
 
-        callback.album_updated(album, new_assets)
+        if DEBUG:
+            test.album_updated(album, new_assets)
+        else:
+            callback.album_updated(album, new_assets)
 
         cache[album['id']] = online_assets
 
