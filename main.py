@@ -1,199 +1,67 @@
-import os
 import ast
-import socket
+import os
 import requests
-from urllib.parse import urlparse
+import json
+import paho.mqtt.publish as mqtt
 
 IMMICH_KEY = os.environ.get('IMMICH_KEY')
 IMMICH_INTERNAL_URL = os.environ.get('IMMICH_INTERNAL_URL')
-IMMICH_EXTERNAL_URL = os.environ.get('IMMICH_URL') or IMMICH_INTERNAL_URL
-CACHE_PATH = os.environ.get('CACHE_PATH')
-ALBUMS = ast.literal_eval(os.environ['ALBUMS'])
-DEBUG = (os.getenv('DEBUG', '0') == '1')
+ALBUMS = ast.literal_eval(os.environ.get('ALBUMS')) if os.environ.get('ALBUMS') is not None else None
+CACHE_FILE = os.environ.get('CACHE_FILE')
 MQTT_BROKER = os.environ.get('MQTT_BROKER')
-MQTT_PORT = os.environ.get('MQTT_PORT')
+MQTT_PORT = int(os.environ.get('MQTT_PORT')) if os.environ.get('MQTT_PORT') is not None else 1883
 MQTT_USERNAME = os.environ.get('MQTT_USERNAME')
 MQTT_PASSWORD = os.environ.get('MQTT_PASSWORD')
 MQTT_TOPIC = os.environ.get('MQTT_TOPIC') or 'immich'
 
-if IMMICH_KEY is None:
-    raise Exception('IMMICH_KEY environment variable not set')
-if IMMICH_INTERNAL_URL is None:
-    raise Exception('IMMICH_INTERNAL_URL environment variable not set')
-if MQTT_BROKER is None:
-    raise Exception('MQTT_BROKER environment variable not set')
+def get_cache() -> dict[str, int]:
+    if CACHE_FILE is None or not os.path.isfile(CACHE_FILE):
+        return {}
+    with open(CACHE_FILE, 'r') as file:
+        return json.load(file)
 
-def check(host, port, timeout=1):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(timeout)
-    try:
-        sock.connect((host, port))
-    except:
-        return False
-    else:
-        sock.close()
-        return True
-
-
-def save_data(file_path, dictionary):
-    try:
-        with open(file_path, 'w') as file:
-            for key in dictionary:
-                file.write(str(dictionary[key]['total_items']) + '\n')
-        if DEBUG:
-            print("Data stored successfully!")
-    except IOError as error:
-        print(error)
-        print("An error occurred while saving the file.")
-
-
-def read_data(file_path):
-    tmp = []
-    try:
-        with open(file_path, 'r') as file:
-            for string in file:
-                tmp.append(int(string.strip()))
-        return tmp
-    except IOError as error:
-        print(error)
-        print("An error occurred while loading the file.")
-
-
-def get_album_contents(uuid, imkey):
-    url = IMMICH_INTERNAL_URL + "/api/album/" + uuid
-
-    payload = {}
-    headers = {
+def album_api(album_id: str = ''):
+    return requests.request("GET", f"{IMMICH_INTERNAL_URL}/api/album/{album_id}", headers={
         'Accept': 'application/json',
-        'x-api-key': imkey
-    }
+        'x-api-key': IMMICH_KEY
+    }).json()
 
-    response = requests.request("GET", url, headers=headers, data=payload)
+def get_album_contents(album_id: str) -> list[str]:
+    """Returns a list of asset UUIDs in the specified album."""
+    album = album_api(album_id)
+    return [asset['id'] for asset in album['assets']]
 
-    a = response.json()
-
-    album_name = a['albumName']
-    count = a['assetCount']
-
-    return album_name, count
-
-
-def ntfy_notification(ntfyurl, ntfytitle, ntfymessage, ntfylink, authorization=''):
-    if authorization != '':
-        requests.post(ntfyurl,
-                      data=ntfymessage.encode('utf-8'),
-                      headers={
-                          "Title": ntfytitle,
-                          "Click": ntfylink,
-                          "Icon": NTFY_ICON,
-                          "Authorization": "Basic " + authorization
-                      })
-    else:
-        requests.post(ntfyurl,
-                      data=ntfymessage.encode('utf-8'),
-                      headers={
-                          "Title": ntfytitle,
-                          "Click": ntfylink,
-                          "Icon": NTFY_ICON
-                      })
-
-
-def ntfy_email(ntfyurl, ntfymessage, ntfyemail, ntfytag, authorization=''):
-    if authorization != '':
-        requests.post(ntfyurl,
-                      data=ntfymessage,
-                      headers={
-                          "Email": ntfyemail,
-                          "Tags": ntfytag,
-                          "Authorization": "Basic " + authorization
-                      })
-    else:
-        requests.post(ntfyurl,
-                      data=ntfymessage,
-                      headers={
-                          "Email": ntfyemail,
-                          "Tags": ntfytag
-                      })
-
+def publish_mqtt(album_name: str, new_assets: list[str]):
+        mqtt.single(
+            topic=f"{MQTT_TOPIC}/{album_name}",
+            payload=json.dumps(new_assets),
+            hostname=MQTT_BROKER,
+            port=MQTT_PORT,
+            auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD} if MQTT_USERNAME is not None else None
+        )
 
 if __name__ == '__main__':
+    cache = get_cache()
 
-    total_items_stored = []
-    albums = {}
+    for album in album_api():
+        #Query all albums if no albums are specified otherwise only query the specified albums.
+        #Only query albums where the number of assets don't match.
+        if (ALBUMS is None or album['albumName'] in ALBUMS or album['id'] in ALBUMS) and \
+            (album['id'] in cache and len(cache[album['id']]) != album['assetCount']):
+            continue
 
-    url = urlparse(IMMICH_INTERNAL_URL)
+        online_assets = get_album_contents(album['id'])
+        cached_assets = cache[album['id']] if album['id'] in cache else []
+        new_assets = [asset for asset in online_assets if asset not in cached_assets] #Get the difference.
+        if len(new_assets) == 0: #This can occur if items are removed.
+            continue
 
-    if check(url.hostname, url.port):
-        if os.path.exists(CACHE_PATH):
-            if DEBUG:
-                print('Cache file exists')
-            total_items_stored = read_data(CACHE_PATH)
-            if DEBUG:
-                for item in total_items_stored:
-                    print('Items:', item)
+        print(f"{len(new_assets)} new assets found in '{album['albumName']}'")
 
-            i = 0
-            for key in ALBUMS:
-                topic = ALBUMS[key]
-                if DEBUG:
-                    print("Topic: ", topic)
-                    print("Album ID: ", key)
-                tmp_title, tmp_total = get_album_contents(key, IMMICH_KEY)
-                if i < len(total_items_stored):
-                    albums[key] = {'topic': topic, 'title': tmp_title, 'total_items': tmp_total,
-                                     'stored_items': total_items_stored[i]}
-                else:
-                    albums[key] = {'topic': topic, 'title': tmp_title, 'total_items': tmp_total,
-                                     'stored_items': tmp_total}
-                i += 1
+        publish_mqtt(album['albumName'], new_assets)
 
-            if DEBUG:
-                for key in albums:
-                    print('Album Name: ', albums[key]['title'])
-                    print('Total Items Stored: ', albums[key]['stored_items'])
-                    print('Total Items Now: ', albums[key]['total_items'])
+        cache[album['id']] = online_assets
 
-            i = 0
-            for key in albums:
-                albums[key]['new_items'] = albums[key]['total_items'] - albums[key]['stored_items']
-                i += 1
-
-            if DEBUG:
-                for key in albums:
-                    print('Album Name:', albums[key]['title'])
-                    print("Items Added:", albums[key]['new_items'])
-
-            for key in albums:
-                if albums[key]['new_items'] > 0:
-                    topic = albums[key]['topic']
-                    url = NTFY_URL + '/' + topic
-                    title = 'Immich'
-                    link = IMMICH_EXTERNAL_URL + '/albums/' + key
-
-                    if albums[key]['new_items'] > 1:
-                        message = str(albums[key]['new_items']) + ' photos added to ' + albums[key]['title'] + '!'
-                    else:
-                        message = 'Photo added to ' + albums[key]['title'] + '!'
-
-                    ntfy_notification(url, title, message, link, AUTHORIZATION_KEY)
-
-                    if EMAIL != '':
-                        topic = albums[key]['topic'] + '_email'
-                        url = NTFY_URL + '/' + topic
-                        message = 'Immich - ' + message + ' ' + link
-
-                        ntfy_email(url, message, EMAIL, TAG, AUTHORIZATION_KEY)
-
-        else:
-            for key in ALBUMS:
-                key = key
-                topic = ALBUMS[key]
-                tmp_title, tmp_total = get_album_contents(key, IMMICH_KEY)
-                albums[key] = {'topic': topic, 'title': tmp_title, 'total_items': tmp_total}
-
-            if DEBUG:
-                for key in albums:
-                    print('Album Name:', albums[key]['title'])
-                    print('Total Items Now: ', albums[key]['total_items'])
-
-        save_data(CACHE_PATH, albums)
+    if CACHE_FILE is not None:
+        with open(CACHE_FILE, 'w') as file:
+            json.dump(cache, file)
