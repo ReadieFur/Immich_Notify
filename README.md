@@ -64,10 +64,15 @@ If you would like to run this script on an interval (e.g. every 5 minutes), I re
 This option is for installing and running the script locally. This method is preffered if you plan to make major changes to the script.
 
 ### Requirements
-- Python 3.6+
+- Python 3
 - pip
 - virtualenv
 - git
+
+You can install these requirements on Ubuntu by running the following command:
+```bash
+sudo apt install python3 python3-pip virtualenv git
+```
 
 ### Installation
 Run the following command to automatically install the script and it's Python dependencies in `./immich_notify`.
