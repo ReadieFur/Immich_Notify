@@ -77,7 +77,7 @@ sudo apt install python3 python3-pip virtualenv git
 ### Installation
 Run the following command to automatically install the script and it's Python dependencies in `./immich_notify`.
 ```bash
-curl -s https://raw.githubusercontent.com/ReadieFur/Immich_Notify/master/install.sh | bash
+curl -s https://raw.githubusercontent.com/ReadieFur/Immich_Notify/master/local_install.sh | bash
 ```
 
 The above script will clone this repository and create a virtual environment in `./immich_notify` and install the script and it's Python dependencies.
