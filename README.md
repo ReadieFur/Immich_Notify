@@ -4,7 +4,7 @@ This Python script checks Immich albums for added items and sends notifications 
 # Setup
 Clone this repository and build the docker image.
 ```bash
-git clone
+git clone https://github.com/ReadieFur/Immich_Notify.git
 cd immich_notify
 docker build -t immich_notify .
 ```
