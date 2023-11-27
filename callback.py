@@ -8,10 +8,10 @@ MQTT_USERNAME = os.environ.get('MQTT_USERNAME')
 MQTT_PASSWORD = os.environ.get('MQTT_PASSWORD')
 MQTT_TOPIC = os.environ.get('MQTT_TOPIC') or 'immich'
 
-def album_updated(album_name: str, new_assets: list[str]):
-    print(f"{len(new_assets)} new assets found in '{album_name}'")
+def album_updated(album, new_assets: list[str]):
+    print(f"{len(new_assets)} new assets found in '{album['albumName']}'")
     mqtt.single(
-        topic=f"{MQTT_TOPIC}/{album_name}",
+        topic=f"{MQTT_TOPIC}/{album['id']}",
         payload=json.dumps(new_assets),
         hostname=MQTT_BROKER,
         port=MQTT_PORT,

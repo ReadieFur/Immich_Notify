@@ -42,7 +42,7 @@ if __name__ == '__main__':
         if len(new_assets) == 0: #This can occur if items are removed.
             continue
 
-        callback.album_updated(album['albumName'], new_assets)
+        callback.album_updated(album, new_assets)
 
         cache[album['id']] = online_assets
 
