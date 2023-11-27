@@ -2,6 +2,10 @@ import ast
 import os
 import requests
 import json
+from dotenv import load_dotenv
+
+if os.path.isfile('.env'):
+    load_dotenv()
 
 if os.path.isfile('callback.py'):
     import callback
