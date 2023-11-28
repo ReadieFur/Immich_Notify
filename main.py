@@ -47,7 +47,9 @@ if __name__ == '__main__':
             continue
 
         if DEBUG:
-            test.album_updated(album, new_assets)
+            #If debug mode is enabled, use the test.py file instead of callback.py.
+            #Additionally, limit the number of messages sent to 5.
+            test.album_updated(album, new_assets[:5])
         else:
             callback.album_updated(album, new_assets)
 
