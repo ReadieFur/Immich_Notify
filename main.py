@@ -4,17 +4,20 @@ import requests
 import json
 from dotenv import load_dotenv
 
-if os.environ.get("SKIP_ENV") is None and os.path.isfile('.env'):
+DEBUG = os.environ.get('DEBUG') == "true"
+
+if os.environ.get("SKIP_ENV") != "true" and os.path.isfile('.env'):
     load_dotenv()
 
-if os.path.isfile('callback.py'):
+if not DEBUG:
+    if not os.path.isfile('callback.py'):
+        raise Exception("No callback.py file found.")
     import callback
 
 IMMICH_KEY = os.environ.get('IMMICH_KEY')
 IMMICH_URL = os.environ.get('IMMICH_URL')
 ALBUMS = ast.literal_eval(os.environ.get('ALBUMS')) if os.environ.get('ALBUMS') is not None else None
 CACHE_FILE = "./cache.json"
-DEBUG = os.environ.get('DEBUG') is not None
 
 if DEBUG:
     import test
@@ -24,11 +27,6 @@ def album_api(album_id: str = ''):
         'Accept': 'application/json',
         'x-api-key': IMMICH_KEY
     }).json()
-
-def get_album_contents(album_id: str) -> list[str]:
-    """Returns a list of asset UUIDs in the specified album."""
-    album = album_api(album_id)
-    return [asset['id'] for asset in album['assets']]
 
 if __name__ == '__main__':
     cache = json.load(open(CACHE_FILE, 'r')) if os.path.isfile(CACHE_FILE) else {}
@@ -40,7 +38,8 @@ if __name__ == '__main__':
             (album['id'] in cache and len(cache[album['id']]) != album['assetCount']):
             continue
 
-        online_assets = get_album_contents(album['id'])
+        album = album_api(album['id']) #Get the full album data.
+        online_assets = [asset['id'] for asset in album['assets']]
         cached_assets = cache[album['id']] if album['id'] in cache else []
         new_assets = [asset for asset in online_assets if asset not in cached_assets] #Get the difference.
         if len(new_assets) == 0: #This can occur if items are removed.
@@ -55,5 +54,6 @@ if __name__ == '__main__':
 
         cache[album['id']] = online_assets
 
-    with open(CACHE_FILE, 'w') as file:
-        json.dump(cache, file)
+    if os.environ.get('NO_CACHE') != "true":
+        with open(CACHE_FILE, 'w') as file:
+            json.dump(cache, file)
