@@ -4,7 +4,7 @@ import requests
 import json
 from dotenv import load_dotenv
 
-if os.path.isfile('.env'):
+if os.environ.get("SKIP_ENV") is None and os.path.isfile('.env'):
     load_dotenv()
 
 if os.path.isfile('callback.py'):
